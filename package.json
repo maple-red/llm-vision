@@ -1,0 +1,15 @@
+{
+  "name": "llm-vision",
+  "version": "1.0.0",
+  "description": "通义千问 VL 视觉识别 MCP 服务器 —— 让无视觉能力的文本模型（如 deepseek）通过 describe_image 工具借眼识图",
+  "main": "server.mjs",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.16.0",
+    "zod": "^3.25.0"
+  }
+}

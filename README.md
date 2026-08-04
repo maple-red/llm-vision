@@ -5,145 +5,129 @@
 ## 目录
 
 1. [这个项目能做什么](#1-这个项目能做什么)
-2. [项目定位](#2-项目定位)
-3. [项目自带的 Skill](#3-项目自带的-skillimage-recognition)
-4. [适用范围](#4-适用范围)
-5. [项目结构](#5-项目结构)
-6. [安装位置](#6-安装位置)
-7. [快速开始](#7-快速开始)
-8. [手动安装](#8-手动安装)
-9. [使用方法](#9-使用方法)
-10. [配置选项](#10-配置选项)
-11. [配合识图验证流程使用](#11-配合识图验证流程使用)
-12. [安全说明](#12-安全说明)
-13. [更新记录](#13-更新记录)
-14. [许可证](#14-许可证)
+2. [项目组成：MCP + Skill](#2-项目组成mcp--skill)
+3. [适用范围](#3-适用范围)
+4. [项目结构](#4-项目结构)
+5. [安装位置](#5-安装位置)
+6. [快速开始](#6-快速开始)
+7. [手动安装](#7-手动安装)
+8. [使用方法](#8-使用方法)
+9. [配置选项](#9-配置选项)
+10. [安全说明](#10-安全说明)
+11. [更新记录](#11-更新记录)
+12. [许可证](#12-许可证)
 
 ## 1. 这个项目能做什么
 
-- 看图认人：这张图里的人是谁，返回身份猜测和特征描述
-- 描述画面：图片里有什么、什么场景，返回中文描述
+给纯文本模型补上"眼睛"，让它能处理图片：
+
+- 描述画面：图片里有什么、什么场景
+- 看图认人：这张图里的人是谁
 - 提取文字：图片里的文字内容（OCR）
-- 定向提问：问你想关注的细节，比如"这人穿的什么颜色衣服"
+- 定向问答：只回答你问的细节，如"他穿的什么颜色"
 
-纯文本模型收到图片只能显示 "Unsupported Image"。本工具把图片编码后发给通义千问 VL 视觉模型，拿回文字描述，文本模型就能基于文字继续回答你的问题。
+纯文本模型收到图片只会显示 "Unsupported Image"。本工具把图片编码后发给通义千问 VL 视觉模型，拿回文字描述，模型就能基于文字回答你的问题。
 
-## 2. 项目定位
+## 2. 项目组成：MCP + Skill
 
-本项目是一个 **MCP 服务器**，提供 `describe_image` 工具。
+本项目由**两部分**组成，能力互补：
 
-| 概念 | 作用 | 说明 |
+| 部分 | 作用 | 谁在用 |
 |---|---|---|
-| MCP（本项目） | 提供识图能力 | 任何支持 MCP 的客户端都能调用 |
-| Skill | 提供识图流程 | Claude Code 专属机制，可选增强 |
+| **MCP 服务器** | 提供识图能力（`describe_image` 工具） | 所有客户端 |
+| **Skill** | 规范模型识图行为，防止瞎猜 | 针对 Claude Code |
 
-MCP 回答"能不能看"，Skill 回答"怎么看得好"。本项目主要为 MCP，也配有 Claude 的 Skill（可选）。配套的识图验证流程见下文[配合识图验证流程使用](#11-配合识图验证流程使用)。
+> 一句话：**MCP = 眼睛（能不能看），Skill = 纪律（怎么看得好）。** 缺 MCP 看不了图，缺 Skill 会"可能看一眼就乱说"。
 
-## 3. 项目自带的 Skill（image-recognition）
+### 2.1 Skill 规范了什么
 
-本项目**除了 MCP 服务器，还附带一个 Skill**：`image-recognition`（识图三角验证）。
+Skill（`image-recognition`）给模型立了**三条行为规则**：
 
-### 3.1 这个 Skill 是什么
+| # | 规则 | 解决什么问题 |
+|---|---|---|
+| 1 | **必须看图再回答**：遇到图片问题先调 `describe_image`，禁止说"我看不到"或凭空猜 | 模型装瞎、跳过工具 |
+| 2 | **先描述后判断**：先客观说出画面内容，再回答具体问题 | 模型没看完就下结论 |
+| 3 | **认不出就明说**：看不清/不确定时明确说"无法确认"，不编造答案 | 模型自信地答错 |
 
-一个给 **Claude Code** 用的技能包。它不提供新工具，而是**教模型怎么用好 `describe_image`**——防止模型"看一眼就下结论"（比如认错人名还言之凿凿）。
+**外加一条升级规则**（用于"这人/这物具体是谁"这类需要准确结论的场景）：
 
-### 3.2 它解决了什么问题
+| # | 升级规则 | 说明 |
+|---|---|---|
+| 4 | **三角验证**：识图 → 搜索交叉 → 反向识图实锤 | 把"猜"升级成"有来源、可追溯"的结论 |
+
+**具体对比：**
 
 | 没有 Skill | 有 Skill |
 |---|---|
-| 模型调一次识图就下结论 | 强制走完整验证流程 |
-| 认错人还自信回答 | 证据不足时主动说"无法确认" |
-| 识别结果无法追溯 | 每步都有来源和佐证 |
+| 可能不调工具，直接说"看不到图" | 一定先调 `describe_image` |
+| 看一遍就自信回答 | 先描述画面再回答 |
+| 认错人还言之凿凿 | 认不出就说"无法确认" |
+| 结果无法追溯 | 认人/认物时有证据链（反向识图 + 来源） |
 
-### 3.3 它做了什么（识图三角验证）
+## 3. 适用范围
 
-Skill 告诉模型，遇到"这是谁/这图哪来的"时**必须**走三步：
+本项目是**标准 MCP 服务器**，任何支持 MCP 协议的客户端都能接入：Claude Code、Cursor、Windsurf、Cline、Codex 等。
 
-1. **描述**：先 `describe_image` 描述画面内容
-2. **猜身份 + 验证**：聚焦特征再问一次，拿猜测后搜索交叉验证
-3. **实锤**：用反向识图（百度识图等）找原始来源
+Skill 部分是 **Claude Code 专属**。其他客户端没有 Skill 机制，可参考[第 2 节](#2-项目组成mcp--skill)的行为规则，用 AGENTS.md 或其他相对应的项目指令文件实现。
 
-### 3.4 怎么安装
-
-两种方式，装到 `~/.claude/skills/`：
-
-```bash
-# 方式一：跑部署脚本时选 y（自动复制）
-bash install.sh
-
-# 方式二：手动复制
-cp -r skills/image-recognition ~/.claude/skills/
-```
-
-装完重启 Claude Code，发图时模型会自动按三角验证流程走。
-
-> Skill 是 Claude Code 专属。其他客户端（Cursor/Codex）没有这套机制，可参考[第 11 节](#11-配合识图验证流程使用)的流程手动实现，或用 AGENTS.md 写入。
-
-## 4. 适用范围
-
-本项目是标准 MCP 服务器，**任何支持 MCP 协议的客户端都能接入**：Claude Code、Cursor、Windsurf、Cline，以及 OpenAI Codex 等。
-
-Skill 部分是 Claude Code 专属机制；其他客户端可以用 AGENTS.md 或项目指令文件实现同样的验证流程。
-
-## 5. 项目结构
+## 4. 项目结构
 
 ```
 llm-vision/
-├── server.mjs        # 核心：MCP 服务器本体
-│                     #   - 定义 describe_image 工具（读图 → base64 → 调通义千问 VL）
-│                     #   - 通过 stdio 协议与客户端通信
+├── server.mjs                    # 核心：MCP 服务器（describe_image 工具）
 ├── skills/
-│   └── image-recognition/   # （可选）识图三角验证 Skill，仅 Claude Code 用户需要
-│       └── SKILL.md         # 安装到 ~/.claude/skills/ 后生效
-├── package.json      # 依赖配置：@modelcontextprotocol/sdk、zod
-├── package-lock.json # 依赖锁定文件（npm install 自动生成，勿手改）
-├── install.sh        # 一键部署（针对 Claude Code，其他客户端用 --no-claude）
-├── .env.example      # 环境变量模板：复制为 .env 后填你的 API Key
-├── .gitignore        # 忽略 node_modules / .env，防止 Key 和依赖被提交
-└── README.md         # 本说明文件
+│   └── image-recognition/        # 可选 Skill（行为规范，仅 Claude Code）
+│       └── SKILL.md
+├── package.json                  # 依赖（@modelcontextprotocol/sdk、zod）
+├── package-lock.json             # 依赖锁定（勿手改）
+├── install.sh                    # 一键部署
+├── .env.example                  # API Key 配置模板
+├── .gitignore                    # 忽略 node_modules / .env
+└── README.md                     # 本文件
 ```
 
-| 文件 | 作用 | 谁需要 |
-|---|---|---|
-| `server.mjs` | MCP 服务器本体，唯一必须运行的文件 | 所有用户 |
-| `skills/image-recognition/` | 识图三角验证 Skill（可选增强） | 仅 Claude Code 用户 |
-| `package.json` | 告诉 npm 要装哪些包、怎么启动 | 所有用户 |
-| `install.sh` | 一键部署：装依赖 + 配 Key + 注册 | Claude Code 用户 |
-| `.env.example` | Key 的填法模板，填好的 `.env` 不上传 | 所有用户 |
-| `.gitignore` | 安全保险：确保依赖和密钥不进 git | 所有用户 |
+| 文件 | 作用 |
+|---|---|
+| `server.mjs` | 唯一必须运行的文件，就是 MCP 服务器本身 |
+| `skills/image-recognition/` | 可选 Skill 源文件，装到 `~/.claude/skills/` 才生效 |
+| `install.sh` | 自动装依赖 + 配 Key + 注册 MCP + 可选装 Skill |
+| `.env.example` | Key 填法模板，复制为 `.env` 使用 |
 
-## 6. 安装位置
+## 5. 安装位置
 
-两个组件安装到**不同的地方**，下面是 `install.sh` 默认装到的具体位置。
+### 5.1 MCP → 注册到 `~/.claude.json`
 
-### 5.1 MCP（llm-vision）→ 默认注册到 `~/.claude.json`
+MCP 通过注册挂到客户端，配置写入 `~/.claude.json`（Windows：`C:\Users\<用户名>\.claude.json`）：
 
-MCP 通过**注册**挂到客户端，源码留在项目里，但**配置写入客户端的配置文件**。
-
-**默认安装路径**（Claude Code，`install.sh` 用 `-s user` 全局注册）：
-
-```
-~/.claude.json
-└── mcpServers
-    └── llm-vision
-        ├── command: node
-        ├── args: ["<项目绝对路径>/server.mjs"]
-        └── env:  { "DASHSCOPE_API_KEY": "sk-xxx" }
+```json
+"mcpServers": {
+  "llm-vision": {
+    "type": "stdio",
+    "command": "node",
+    "args": ["<项目绝对路径>/server.mjs"],
+    "env": { "DASHSCOPE_API_KEY": "sk-xxx" }
+  }
+}
 ```
 
-> Windows 下 `~` = `C:\Users\<你的用户名>`，即 `C:\Users\<用户名>\.claude.json`
+上面这段 JSON 就是 `~/.claude.json` 里 `mcpServers` 字段的内容。`claude mcp add` 命令的本质就是帮你在该文件里写入这段（二选一：用命令，或手改文件）。
 
-**注意 scope 区别**：
-- 不带 `-s` 的 `claude mcp add` → **local（项目级）**，写进当前项目的 `.claude.json`，只在本项目可用
-- 带 `-s user`（`install.sh` 用的）→ **用户级全局** `~/.claude.json`，所有项目可用
+**命令怎么读**（`user` 是作用域，`llm-vision` 才是服务名）：
 
-其他客户端（Cursor / Cline 等）在各自 MCP 配置文件里填同样的 `mcpServers` 结构。
+```
+claude mcp add -s user llm-vision -e DASHSCOPE_API_KEY=xxx -- node server.mjs
+              └┬──┘└──┬───┘└──┬─────┘
+           作用域选项 值     服务名    启动命令
+```
 
-### 5.2 Skill（image-recognition）→ 默认复制到 `~/.claude/skills/`
+**scope 取值**：
+- `-s local`（默认，不带 `-s` 等同）→ **项目级**，只在本项目可用
+- `-s user`（install.sh 用这个）→ **用户级全局**，写 `~/.claude.json`，所有项目可用
+- `-s project` → 项目级（通过项目内配置）
 
-Skill 需要**复制到 Claude Code 的 skills 目录**才会被识别。
+### 5.2 Skill → 复制到 skills 目录
 
-**默认安装路径**（`install.sh` 选 y 时）：
+Skill 要**复制到 Claude Code 的 skills 目录**才生效：
 
 ```
 ~/.claude/skills/
@@ -151,70 +135,58 @@ Skill 需要**复制到 Claude Code 的 skills 目录**才会被识别。
     └── SKILL.md
 ```
 
-> Windows 下即 `C:\Users\<你的用户名>\.claude\skills\image-recognition\SKILL.md`
+> **推荐直接用全局**（`~/.claude/skills/`，install.sh 选 y 时自动装到这儿）：一份搞定，所有项目都能用，省心。
+>
+> 只有少数情况才装到项目级（`<项目>/.claude/skills/`）：比如某个项目想用**定制版** Skill，其他项目不用。日常都选全局。
+>
+> 仓库里 `skills/image-recognition/` 是**源文件**，装到全局/项目都是**复制**一份过去，仓库那份留着以便以后更新重装。
 
-| 位置 | 生效范围 |
-|---|---|
-| `~/.claude/skills/` | **全局**（所有项目可用）← install.sh 默认装这里 |
-| `<项目>/.claude/skills/` | **仅该项目**可用 |
-
-> 本项目 `skills/image-recognition/` 是**源文件**（随仓库分发）；`install.sh` 把它**复制**到 `~/.claude/skills/` 才真正生效（选 y）。
-
-## 7. 快速开始
+## 6. 快速开始
 
 需要 Node.js ≥ 18，以及阿里云百炼 API Key（[申请地址](https://bailian.console.aliyun.com/)）。
 
 ```bash
-# 1. 克隆仓库
 git clone <仓库地址>
 cd llm-vision
 
-# 2a. Claude Code 用户：完整部署（装依赖 + 配 Key + 注册 MCP + 可选装 Skill）
+# Claude Code 用户：装依赖 + 配 Key + 注册 MCP + 询问是否装 Skill
 bash install.sh
 
-# 2b. 其他客户端（Cursor / Codex / Cline）：只装依赖 + 配 Key，跳过注册
+# 其他客户端（Cursor/Codex/Cline）：只装依赖 + 配 Key
 bash install.sh --no-claude
 ```
 
-> 说明：
-> - `install.sh` 默认针对 **Claude Code**（注册 MCP，并**询问**是否安装 Skill）
-> - 想要 Skill 选 y，不想要选 n 或回车；也可直接 `bash install.sh --no-skill` 跳过
-> - 非 Claude Code 用户，用 `bash install.sh --no-claude`（只安装 + 配 Key）
-> - Skill 是 **可选** 增强，不装也能用 MCP 识图，只是少了"三角验证"流程
+`install.sh` 会询问是否安装 Skill：选 `y` 安装，选 `n` 或回车跳过。也可用 `--no-skill` 直接跳过。
 
-## 8. 手动安装
+## 7. 手动安装
 
-### 8.1 Claude Code 用户
+> 前提：以下命令**在项目目录内执行**。先拿到源码并进入目录：
+> ```bash
+> git clone <仓库地址>
+> cd llm-vision
+> ```
 
-```bash
-# 1. 安装依赖
-npm install
-
-# 2. 配置 Key（复制模板并编辑）
-cp .env.example .env
-# 编辑 .env，填入 DASHSCOPE_API_KEY
-
-# 3. 注册到 Claude Code（全局）
-claude mcp add llm-vision -e DASHSCOPE_API_KEY=<你的Key> -- node <项目绝对路径>/server.mjs
-
-# 4. 验证
-claude mcp list   # 应显示 llm-vision Connected
-```
-
-### 8.2 其他客户端（Cursor / Codex / Cline 等）
-
-不依赖 Claude Code，只需安装依赖 + 配 Key，然后在**各自客户端的 MCP 配置**里指向服务器：
+### 7.1 Claude Code 用户
 
 ```bash
-# 1. 安装依赖
 npm install
-
-# 2. 配置 Key（复制模板并编辑）
-cp .env.example .env
-# 编辑 .env，填入 DASHSCOPE_API_KEY
+cp .env.example .env        # 编辑 .env 填入 DASHSCOPE_API_KEY
+claude mcp add -s user llm-vision -e DASHSCOPE_API_KEY=<你的Key> -- node <项目绝对路径>/server.mjs
+claude mcp list             # 应显示 llm-vision Connected
 ```
 
-在**各自的 MCP 配置文件**里按标准协议注册（地址指向 `server.mjs`）：
+装 Skill（可选）：
+
+```bash
+cp -r skills/image-recognition ~/.claude/skills/
+```
+
+> **为什么仓库里已有 `skills/image-recognition/` 还要复制？**
+> 仓库里的是**源文件**（跟随版本分发）。但 Claude Code 的 Skill **只从 `~/.claude/skills/` 加载**，不会自动读你仓库里的目录。`cp` 就是把源文件"安装"到生效位置，`install.sh` 选 y 时自动做这一步。
+
+### 7.2 其他客户端（Cursor / Codex / Cline 等）
+
+装依赖 + 配 Key，然后在**各自的 MCP 配置文件**里加下面这段（文件位置见下表）：
 
 ```json
 {
@@ -229,60 +201,46 @@ cp .env.example .env
 }
 ```
 
-**这段 JSON 配在哪个文件？** 各客户端不同，本质都是把上面的 `mcpServers` 结构填到各自的配置文件里：
+| 客户端 | 配置文件位置 |
+|---|---|
+| Cursor | `.cursor/mcp.json` 或 UI 设置 |
+| Windsurf | UI 设置（Settings → MCP） |
+| Cline | 设置里手动添加 |
+| Continue | `~/.continue/config.json` |
+| Codex | `~/.codex/config.toml` 或项目 `codex.json` |
 
-| 客户端 | 配置文件位置 | 说明 |
-|---|---|---|
-| **Claude Code**（手动配） | 用户级 `~/.claude.json` 或 项目级 `.mcp.json` | 或直接用命令 `claude mcp add`，不用手改文件 |
-| **Cursor** | 设置界面 Settings → MCP，或项目 `.cursor/mcp.json` | 在 UI 里点 Add 填上述字段，或直接编辑 `.cursor/mcp.json` |
-| **Windsurf** | 设置 Settings → MCP Servers | 图形界面添加 |
-| **Cline** | 设置 Cline → MCP Servers → 手动添加 | 填上述 JSON 字段 |
-| **Continue** | `~/.continue/config.json` 的 `mcpServers` | 编辑配置文件加同样结构 |
-| **Codex** | `~/.codex/config.toml`（或项目 `codex.json`） | 用 TOML/JSON 加 mcpServers 配置 |
+> 所有客户端填的都是**同一个结构**（type/command/args/env），只是存放的文件不同。
 
-> 提示：所有客户端填的都是**同一个标准结构**（type/command/args/env），只是存放的**文件不同**。搜你客户端的"MCP 配置"即可定位。
+## 8. 使用方法
 
-## 9. 使用方法
-
-配置完成后重启 Claude Code，直接自然语言说：
+配置完成后重启 Claude Code，直接说：
 
 - 「看 /path/to/photo.jpg 这个人是谁」
 - 「帮我描述这张图：/path/to/photo.jpg」
 - 「提取这张图里的文字」
 
-其他 MCP 客户端也可按标准协议直接调用 `describe_image(image_path, prompt?)`。
+其他 MCP 客户端可按标准协议直接调用 `describe_image(image_path, prompt?)`。
 
-## 10. 配置选项
+## 9. 配置选项
 
 | 变量 | 说明 | 默认值 |
 |---|---|---|
 | `DASHSCOPE_API_KEY` | 阿里云百炼 API Key（必填） | 无 |
 | `QWEN_VL_MODEL` | 视觉模型名 | `qwen-vl-max` |
-| `DASHSCOPE_API_BASE` | API 地址（OpenAI 兼容模式） | `https://dashscope.aliyuncs.com/compatible-mode/v1` |
+| `DASHSCOPE_API_BASE` | API 地址 | `https://dashscope.aliyuncs.com/compatible-mode/v1` |
 
-省钱建议：日常识图用 `qwen-vl-plus`（免费额度常用款），复杂图文或 OCR 再用 `qwen-vl-max`。阿里云百炼一个 Key 通吃所有模型，有额度即可。
+省钱建议：日常识图用 `qwen-vl-plus`（免费额度常用款），复杂图文或 OCR 用 `qwen-vl-max`。
 
-## 11. 配合识图验证流程使用
-
-只调用一次识图，模型可能"看一眼就下结论"（比如猜错人名）。建议配合以下验证流程，把认人从"猜"升级为"实锤"：
-
-1. 调用 `describe_image` 描述画面
-2. 聚焦特征再次调用，得到身份猜测
-3. 用搜索交叉验证标志性特征
-4. 反向识图（百度识图等）搜索实锤
-
-在 Claude Code 中，这套流程可封装为 Skill；其他客户端可写入 AGENTS.md 或项目指令。
-
-## 12. 安全说明
+## 10. 安全说明
 
 本项目不含任何真实 API Key，Key 通过环境变量注入（模板见 `.env.example`）。`.env` 和 `node_modules` 已被 `.gitignore` 忽略，不会上传。部署时不要把你的 Key 写进代码或提交到仓库。
 
-## 13. 更新记录
+## 11. 更新记录
 
 | 版本 | 日期 | 内容 |
 |---|---|---|
-| **v1.0.0** | 2026-08-04 | 首个正式版：MCP 识图服务器 + describe_image 工具 + 一键部署 + 可选 Skill |
+| **v1.0.0** | 2026-08-04 | 首个正式版：MCP 识图服务器 + 行为规范 Skill + 一键部署 |
 
-## 14. 许可证
+## 12. 许可证
 
 MIT

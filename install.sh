@@ -116,13 +116,13 @@ echo -e "\n${YELLOW}[5/6] 安装 Skill（可选）...${NC}"
 INSTALL_SKILL="false"
 if [ "$SKIP_SKILL" = "true" ]; then
   echo -e "  - 已指定 --no-skill，跳过 Skill 安装"
-  echo -e "  - 说明：Skill 是 Claude Code 专属的可选增强，装不装都能用 MCP 识图，只是少了"三角验证"流程"
+  echo -e '  - 说明：Skill 是 Claude Code 专属的可选增强，装不装都能用 MCP 识图，只是少了"三角验证"流程'
 elif [ "$SKIP_CLAUDE" = "true" ]; then
   echo -e "  - 已跳过（--no-claude 模式，Skill 仅适用于 Claude Code）"
 elif [ ! -d "skills/image-recognition" ]; then
   echo -e "  - 未找到 skills/image-recognition 目录，跳过"
 else
-  read -r -p "  是否安装识图 Skill（Claude Code 识图自动走"三角验证"流程）？(y/N): " INSTALL_SKILL
+  read -r -p '  是否安装识图 Skill（Claude Code 识图自动走"三角验证"流程）？(y/N): ' INSTALL_SKILL
   case "$INSTALL_SKILL" in
     y|Y|yes|YES)
       INSTALL_SKILL="true"
@@ -141,7 +141,7 @@ if [ "$INSTALL_SKILL" = "true" ]; then
   else
     cp -r "skills/image-recognition" "$SKILL_TARGET"
     echo -e "  ✓ 已安装 Skill 到 ~/.claude/skills/image-recognition"
-    echo -e "  - 效果：Claude Code 遇到识图会自动走"三角验证"流程（描述→验证→实锤）"
+    echo -e '  - 效果：Claude Code 遇到识图会自动走"三角验证"流程（描述→验证→实锤）'
   fi
 fi
 

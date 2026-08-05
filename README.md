@@ -35,7 +35,7 @@
 | 部分 | 作用 | 谁在用 |
 |---|---|---|
 | **MCP 服务器** | 提供识图能力（`describe_image` 工具） | 所有客户端 |
-| **Skill** | 规范模型识图行为，防止瞎猜 | 针对 Claude Code |
+| **Skill** | 规范模型识图行为，防止瞎猜 | 支持 Agent Skills 的客户端（Claude Code / Codex / Cursor / Gemini CLI） |
 
 > 一句话：**MCP = 眼睛（能不能看），Skill = 纪律（怎么看得好）。** 缺 MCP 看不了图，缺 Skill 会"可能看一眼就乱说"。
 
@@ -66,9 +66,15 @@ Skill（`image-recognition`）给模型立了**三条行为规则**：
 
 ## 3. 适用范围
 
-本项目是**标准 MCP 服务器**，任何支持 MCP 协议的客户端都能接入：Claude Code、Cursor、Windsurf、Cline、Codex 等。
+本项目是**标准 MCP 服务器**，任何支持 MCP 协议的客户端都能接入：Claude Code、Codex、Cursor、Gemini CLI、Cline 等。
 
-Skill 部分是 **Claude Code 专属**。其他客户端没有 Skill 机制，可参考[第 2 节](#2-项目组成mcp--skill)的行为规则，用 AGENTS.md 或其他相对应的项目指令文件实现。
+Skill 走 **Agent Skills 开放标准**（agentskills.io），Claude Code / Codex / Cursor / Gemini CLI 均原生支持，复制 `skills/image-recognition/` 到各自 skills 目录即可：
+- Claude Code → `.claude/skills/`
+- Codex → `.agents/skills/` 或 `~/.agents/skills/`
+- Gemini CLI → `.agents/skills/` 或 `.gemini/skills/`
+- Cursor → `.cursor/skills/`（也兼容直接读 `.claude/skills/`）
+
+不支持的客户端可参考[第 2 节](#2-项目组成mcp--skill)的行为规则，用对应的项目指令文件实现。
 
 ## 4. 项目结构
 
@@ -76,7 +82,7 @@ Skill 部分是 **Claude Code 专属**。其他客户端没有 Skill 机制，�
 llm-vision/
 ├── server.mjs                    # 核心：MCP 服务器（describe_image 工具）
 ├── skills/
-│   └── image-recognition/        # 可选 Skill（行为规范，仅 Claude Code）
+│   └── image-recognition/        # 可选 Skill（Agent Skills 开放标准）
 │       └── SKILL.md
 ├── package.json                  # 依赖（@modelcontextprotocol/sdk、zod）
 ├── package-lock.json             # 依赖锁定（勿手改）
@@ -203,13 +209,26 @@ cp -r skills/image-recognition ~/.claude/skills/
 
 | 客户端 | 配置文件位置 |
 |---|---|
-| Cursor | `.cursor/mcp.json` 或 UI 设置 |
+| Cursor | `.cursor/mcp.json` 或 `~/.cursor/mcp.json`（也可 UI 设置） |
 | Windsurf | UI 设置（Settings → MCP） |
 | Cline | 设置里手动添加 |
 | Continue | `~/.continue/config.json` |
-| Codex | `~/.codex/config.toml` 或项目 `codex.json` |
+| Codex | `~/.codex/config.toml`（用户级）或 `.codex/config.toml`（项目级） |
 
-> 所有客户端填的都是**同一个结构**（type/command/args/env），只是存放的文件不同。
+> 大部分客户端用上面同一个 JSON 结构（type/command/args/env）。**Codex 例外**：它是 TOML 格式，且顶层键是**下划线** `mcp_servers`（不是 `mcpServers`）：
+
+```toml
+# ~/.codex/config.toml 或 .codex/config.toml
+[mcp_servers.llm-vision]
+command = "node"
+args = ["<项目绝对路径>/server.mjs"]
+enabled = true
+
+[mcp_servers.llm-vision.env]
+DASHSCOPE_API_KEY = "<你的Key>"
+```
+
+也可以用命令：`codex mcp add llm-vision -- node <项目绝对路径>/server.mjs`（配环境变量加 `--env DASHSCOPE_API_KEY=xxx`）。
 
 ## 8. 使用方法
 
@@ -229,7 +248,7 @@ cp -r skills/image-recognition ~/.claude/skills/
 | `QWEN_VL_MODEL` | 视觉模型名 | `qwen-vl-max` |
 | `DASHSCOPE_API_BASE` | API 地址 | `https://dashscope.aliyuncs.com/compatible-mode/v1` |
 
-省钱建议：日常识图用 `qwen-vl-plus`（免费额度常用款），复杂图文或 OCR 用 `qwen-vl-max`。
+省钱建议：日常识图用 `qwen-vl-plus`（免费额度常用款）或 `qwen3-vl-flash`（第二代性价比款）；复杂图文、OCR、图表分析用 `qwen-vl-max` 或 `qwen3-vl-plus`（更强）。
 
 ## 10. 安全说明
 
@@ -239,6 +258,7 @@ cp -r skills/image-recognition ~/.claude/skills/
 
 | 版本 | 日期 | 内容 |
 |---|---|---|
+| **v1.1.0** | 2026-08-05 | 更新：Skill 改述为 Agent Skills 开放标准（Codex / Cursor / Gemini CLI 通用）；修正 Codex MCP 配置为 TOML `[mcp_servers]` 格式；补充 qwen3-vl 系列模型 |
 | **v1.0.0** | 2026-08-04 | 首个正式版：MCP 识图服务器 + 行为规范 Skill + 一键部署 |
 
 ## 12. 许可证
